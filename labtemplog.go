@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"github.com/lukegb/temperedgo"
 	"log"
 	"net/http"
@@ -12,7 +12,8 @@ import (
 type tempStatus struct {
 	sync.RWMutex
 
-	currentTemp float64
+	CurrentTemp float64 `json:"current_temp"`
+	LastUpdated time.Time `json:"last_updated"`
 }
 
 var curTemp tempStatus = tempStatus{}
@@ -69,7 +70,8 @@ func main() {
 			}
 
 			curTemp.Lock()
-			curTemp.currentTemp = temp
+			curTemp.CurrentTemp = temp
+			curTemp.LastUpdated = time.Now()
 			curTemp.Unlock()
 			x <- struct{}{}
 			log.Println("bonk")
@@ -80,12 +82,21 @@ func main() {
 
 	}()
 	<-x
-	go func() { for { <-x } }()
+	go func() {
+		for {
+			<-x
+		}
+	}()
 
-	http.HandleFunc("/temp", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(200)
+
 		curTemp.RLock()
 		defer curTemp.RUnlock()
-		fmt.Fprintf(w, "%f", curTemp.currentTemp)
+
+		x := json.NewEncoder(w)
+		x.Encode(curTemp)
 	})
 	log.Println("RUNNING!")
 	log.Fatalln(http.ListenAndServe(":55080", nil))
